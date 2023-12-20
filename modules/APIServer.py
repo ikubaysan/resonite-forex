@@ -5,18 +5,50 @@ import time
 import sqlite3
 import uuid
 
+
 # TODO:
 # trade history
 
 
-class TradeType(Enum):
+class Side(Enum):
     LONG = "long"
     SHORT = "short"
 
-class APIServer:
 
+class Market:
+    def __init__(self, name, bid: float = 0, mid: float = 0, ask: float = 0, daily_change_percent: float = 0):
+        self.name = name
+        self.bid = bid
+        self.mid = mid
+        self.ask = ask
+        self.daily_change_percent = daily_change_percent
+
+    def update_prices(self, bid, mid, ask, daily_change_percent):
+        self.bid = bid
+        self.mid = mid
+        self.ask = ask
+        self.daily_change_percent = daily_change_percent
+
+
+class MarketCollection:
+    def __init__(self):
+        self.markets = {}
+
+    def add_market(self, market: Market):
+        self.markets[market.name] = market
+
+    def get_market(self, name) -> Market:
+        return self.markets.get(name)
+
+    def update_markets(self, prices: dict):
+        for name, price_data in prices.items():
+            market = self.get_market(name)
+            if market:
+                market.update_prices(**price_data)
+
+
+class APIServer:
     DEFAULT_BUYING_POWER = 100.0
-    DEFAULT_NAV = 100.0
 
     def __init__(self):
         # Initialize the Flask app within the class
@@ -24,14 +56,11 @@ class APIServer:
         self.db_file = "forex_trading.db"
         self.init_database()
 
-        # Hard-coded bid and ask prices for popular trading pairs
-        self.prices = {
-            "EURUSD": {"bid": 1.1234, "ask": 1.1236, "daily_change_percent": 0.023},
-            "USDJPY": {"bid": 110.25, "ask": 110.28, "daily_change_percent": -0.25},
-            "GBPUSD": {"bid": 1.3012, "ask": 1.3015, "daily_change_percent": 0.12},
-            "AUDUSD": {"bid": 0.7100, "ask": 0.7103, "daily_change_percent": 0.03},
-            "USDCAD": {"bid": 1.2500, "ask": 1.2503, "daily_change_percent": -0.07},
-        }
+        self.market_collection = MarketCollection()
+
+        self.markets = ["EURUSD", "USDJPY", "GBPUSD", "AUDUSD", "USDCAD"]
+        for market in self.markets:
+            self.market_collection.add_market(Market(market))
 
         self.app.add_url_rule('/price', 'get_price', self.get_price, methods=['GET'])
 
@@ -58,7 +87,7 @@ class APIServer:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE,
                 buying_power REAL DEFAULT {self.DEFAULT_BUYING_POWER},
-                nav REAL DEFAULT {self.DEFAULT_NAV}
+                nav REAL DEFAULT {self.DEFAULT_BUYING_POWER}
             );
         ''')
 
@@ -92,7 +121,16 @@ class APIServer:
         conn.close()
 
     def update_prices(self):
-        self.prices = self.prices
+        # TODO: pull prices from OANDA API
+        # Hard-coded bid and ask prices for popular trading pairs
+        prices = {
+            "EURUSD": {"bid": 1.1234, "mid": 1.1235, "ask": 1.1236, "daily_change_percent": 0.023},
+            "USDJPY": {"bid": 110.25, "mid": 110.265, "ask": 110.28, "daily_change_percent": -0.25},
+            "GBPUSD": {"bid": 1.3012, "mid": 1.30135, "ask": 1.3015, "daily_change_percent": 0.12},
+            "AUDUSD": {"bid": 0.7100, "mid": 0.71015, "ask": 0.7103, "daily_change_percent": 0.03},
+            "USDCAD": {"bid": 1.2500, "mid": 1.25015, "ask": 1.2503, "daily_change_percent": -0.07},
+        }
+        self.market_collection.update_markets(prices)
 
         # For each account, update the NAV based on the current market price
 
@@ -213,22 +251,27 @@ class APIServer:
         return jsonify({"message": "Order created successfully", "order_id": order_id}), 201
 
     def create_trade(self, username):
-        market = request.args.get('market')
-        trade_type = request.args.get('type')
-        entry_price = request.args.get('entry_price')
+        market_name = request.args.get('market')
+        side = request.args.get('side')
         units = request.args.get('units')
+
+        try:
+            market = self.market_collection.get_market(market_name)
+        except ValueError:
+            return jsonify({"error": "Invalid market"}), 400
 
         # Validate and convert entry_price and units
         try:
-            entry_price = float(entry_price)
             units = int(units)
         except (TypeError, ValueError):
             return jsonify({"error": "Invalid entry price or units"}), 400
 
         # Validate trade type against the enum
-        if trade_type not in [trade_type.value for trade_type in TradeType]:
+        if side not in [s.value for s in Side]:
             return jsonify({"error": "Invalid trade type"}), 400
 
+        # For now, all entry orders are market orders which fill instantly at mid price.
+        entry_price = market.mid
         trade_cost = entry_price * units  # Modify this according to your cost calculation logic
 
         conn = sqlite3.connect(self.db_file)
@@ -245,15 +288,14 @@ class APIServer:
         new_buying_power = account[0] - trade_cost
         trade_id = str(uuid.uuid4())
 
-        cursor.execute("INSERT INTO trades (trade_id, username, market, trade_type, entry_price, units) VALUES (?, ?, ?, ?, ?, ?)",
-                       (trade_id, username, market, trade_type, entry_price, units))
+        cursor.execute("INSERT INTO trades (trade_id, username, market, side, entry_price, units) VALUES (?, ?, ?, ?, ?, ?)",
+                       (trade_id, username, market, side, entry_price, units))
         cursor.execute("UPDATE accounts SET buying_power = ? WHERE username = ?", (new_buying_power, username))
 
         conn.commit()
         conn.close()
 
         return jsonify({"message": "Trade created successfully", "trade_id": trade_id}), 201
-
 
     def get_leaderboard(self):
         """Endpoint to retrieve a leaderboard page."""
@@ -282,7 +324,7 @@ class APIServer:
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         cursor.execute("UPDATE accounts SET buying_power = ?, nav = ? WHERE username = ?",
-                       (self.DEFAULT_BUYING_POWER, self.DEFAULT_NAV, username))
+                       (self.DEFAULT_BUYING_POWER, self.DEFAULT_BUYING_POWER, username))
         if cursor.rowcount == 0:
             conn.close()
             return jsonify({"error": "Account not found"}), 404
@@ -328,7 +370,16 @@ class APIServer:
         """Endpoint to retrieve the price based on the pair and type ('bid' or 'ask')."""
         pair = request.args.get('pair')
         price_type = request.args.get('type')
-        return str(self.prices.get(pair, {}).get(price_type, "Price not available"))
+
+        try:
+            market = self.market_collection.get_market(pair)
+        except ValueError:
+            return jsonify({"error": "Invalid market"}), 400
+
+        if price_type not in ['bid', 'mid', 'ask']:
+            return jsonify({"error": "Invalid price type"}), 400
+
+        return jsonify({price_type: getattr(market, price_type)})
 
     def run(self, port=5000):
         """Method to run the Flask app."""
