@@ -22,6 +22,10 @@ class Market:
         self.mid = mid
         self.ask = ask
         self.daily_change_percent = daily_change_percent
+        # If the market is not USDJPY, the base currency is USD and the quote currency is the second currency
+        # in the pair. Otherwise, the base currency is JPY and the quote currency is USD.
+        self.base_currency = "USD" if name != "USDJPY" else "JPY"
+        self.quote_currency = name[:3] if name != "USDJPY" else name[3:]
 
     def update_prices(self, bid, mid, ask, daily_change_percent):
         self.bid = bid
