@@ -6,3 +6,4 @@ venv/
 __pycache__/
 *.db
 screenshots/
+tradingview_widgets.html

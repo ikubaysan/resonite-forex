@@ -6,6 +6,19 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from time import sleep
 import logging
+from enum import Enum
+
+class Interval(Enum):
+    ONE_MINUTE = "1"
+    THREE_MINUTES = "3"
+    FIVE_MINUTES = "5"
+    FIFTEEN_MINUTES = "15"
+    THIRTY_MINUTES = "30"
+    ONE_HOUR = "60"
+    TWO_HOURS = "120"
+    FOUR_HOURS = "240"
+    ONE_DAY = "D"
+    ONE_WEEK = "W"
 
 class TradingViewWidget:
     def __init__(self, symbol: str, interval: str):
@@ -78,8 +91,8 @@ class TradingViewScreenshotter:
 
 # Define the widgets for different time intervals and currency pairs
 symbols = ["OANDA:EURUSD", "OANDA:GBPUSD", "OANDA:USDJPY"]
-intervals = ["1", "3", "5", "15"]
-widgets = [TradingViewWidget(symbol, interval) for symbol in symbols for interval in intervals]
+intervals = [Interval.ONE_HOUR, Interval.FOUR_HOURS, Interval.ONE_DAY]
+widgets = [TradingViewWidget(symbol, interval.value) for symbol in symbols for interval in intervals]
 
 # Initialize the screenshotter with the widgets and custom resolution (optional)
 screenshotter = TradingViewScreenshotter(widgets, resolution=(1920, 1080))
