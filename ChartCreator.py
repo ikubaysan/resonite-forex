@@ -5,6 +5,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from time import sleep
+import logging
 
 class TradingViewWidget:
     def __init__(self, symbol: str, interval: str):
@@ -34,16 +35,19 @@ class TradingViewWidget:
 
 
 class TradingViewScreenshotter:
-    def __init__(self, widgets: list[TradingViewWidget], output_folder: str = "screenshots"):
+    def __init__(self, widgets: list[TradingViewWidget], output_folder: str = "screenshots", resolution: tuple[int, int] = (1280, 720)):
         self.widgets = widgets
         self.output_folder = output_folder
+        self.resolution = resolution
         self.driver = self._setup_driver()
 
     def _setup_driver(self) -> webdriver.Chrome:
         chrome_options = Options()
         chrome_options.add_argument("--headless")
         service = Service(ChromeDriverManager().install())
-        return webdriver.Chrome(service=service, options=chrome_options)
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        driver.set_window_size(*self.resolution)  # Set the window size based on the resolution
+        return driver
 
     def generate_html_file(self, filename: str = "tradingview_widgets.html") -> str:
         html_content = '<html><head><title>TradingView Widgets</title></head><body>'
@@ -77,8 +81,8 @@ symbols = ["OANDA:EURUSD", "OANDA:GBPUSD", "OANDA:USDJPY"]
 intervals = ["1", "3", "5", "15"]
 widgets = [TradingViewWidget(symbol, interval) for symbol in symbols for interval in intervals]
 
-# Initialize the screenshotter with the widgets
-screenshotter = TradingViewScreenshotter(widgets)
+# Initialize the screenshotter with the widgets and custom resolution (optional)
+screenshotter = TradingViewScreenshotter(widgets, resolution=(1920, 1080))
 
 # Generate HTML file and take screenshots
 html_file = screenshotter.generate_html_file()
